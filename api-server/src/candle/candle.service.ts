@@ -88,43 +88,13 @@ export class CandleService implements OnModuleInit {
                 console.log(`Processed ${rowCount} rows...`);
               }
               
-              // 日時の解析を修正
-              // 例: "2021-12-22 09:00:00 +0900 JST" -> "2021-12-22T09:00:00+09:00"
+              // 日時の解析
               const timeStr = row.time;
               let time: Date;
               
               try {
-                // JSTフォーマットの解析
-                if (timeStr.includes('JST')) {
-                  // "+0900 JST" 部分を "+09:00" に変換
-                  const isoTimeStr = timeStr
-                    .replace(/(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2}:\d{2})\s\+0900\sJST/, '$1T$2+09:00');
-                  time = new Date(isoTimeStr);
-                  
-                  // 解析に失敗した場合（Invalid Date）、別の方法を試す
-                  if (isNaN(time.getTime())) {
-                    // 日時部分だけを抽出して、JSTとして解析し、UTCに変換
-                    const dateParts = timeStr.match(/(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
-                    if (dateParts) {
-                      // JSTとして解析
-                      const jstTime = new Date(
-                        parseInt(dateParts[1]), // 年
-                        parseInt(dateParts[2]) - 1, // 月（0-11）
-                        parseInt(dateParts[3]), // 日
-                        parseInt(dateParts[4]), // 時
-                        parseInt(dateParts[5]), // 分
-                        parseInt(dateParts[6])  // 秒
-                      );
-                      // JSTからUTCに変換（9時間引く）
-                      time = new Date(jstTime.getTime() - 9 * 60 * 60 * 1000);
-                    } else {
-                      throw new Error(`Failed to parse date: ${timeStr}`);
-                    }
-                  }
-                } else {
-                  // 標準的なフォーマットの場合
-                  time = new Date(timeStr);
-                }
+                // 標準的なフォーマットで解析（JSTとして扱う）
+                time = new Date(timeStr);
                 
                 // 解析に失敗した場合
                 if (isNaN(time.getTime())) {
@@ -149,7 +119,7 @@ export class CandleService implements OnModuleInit {
               if (time < this.stats.minTime) this.stats.minTime = time;
               if (time > this.stats.maxTime) this.stats.maxTime = time;
               
-              // 時間の切り捨て（時間単位でグループ化）
+              // 時間の切り捨て（時間単位でグループ化）- JSTの時間をそのまま使用
               const timeKey = this.getTimeKey(time);
               
               // インデックスの初期化
@@ -202,58 +172,31 @@ export class CandleService implements OnModuleInit {
     });
   }
 
-  // 時間をキーに変換する関数（YYYY-MM-DDTHH形式）
+  // 時間をキーに変換する関数（YYYY-MM-DDTHHの形式、JSTの時間をそのまま使用）
   private getTimeKey(date: Date): string {
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}T${String(date.getUTCHours()).padStart(2, '0')}`;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}`;
   }
 
-  // 日本時間（JST）からUTCに変換する関数
-  private convertJSTtoUTC(year: number, month: number, day: number, hour: number): Date {
-    // 日本時間で日時を作成
-    const jstDate = new Date(year, month - 1, day, hour, 0, 0);
-    // UTCに変換（JSTはUTC+9なので9時間引く）
-    return new Date(jstDate.getTime() - 9 * 60 * 60 * 1000);
-  }
-
-  // UTCから日本時間（JST）に変換する関数
-  private convertUTCtoJST(utcDate: Date): Date {
-    // UTCからJSTに変換（JSTはUTC+9なので9時間足す）
-    return new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
-  }
-
-  async calculateCandle(code: string, year: number, month: number, day: number, hour: number, isJST: boolean = false): Promise<CandleData> {
-    console.log(`Received request for candle data - code: ${code}, date: ${year}-${month}-${day}, hour: ${hour}, isJST: ${isJST}`);
+  async calculateCandle(code: string, year: number, month: number, day: number, hour: number): Promise<CandleData> {
+    console.log(`Received request for candle data - code: ${code}, date: ${year}-${month}-${day}, hour: ${hour} (JST)`);
     
-    let startTime: Date;
-    let endTime: Date;
-    
-    if (isJST) {
-      // 入力がJSTの場合、UTCに変換
-      console.log('Converting JST input to UTC for query...');
-      startTime = this.convertJSTtoUTC(year, month, day, hour);
-      endTime = this.convertJSTtoUTC(year, month, day, hour + 1);
-    } else {
-      // 入力がUTCの場合はそのまま使用
-      startTime = new Date(year, month - 1, day, hour, 0, 0);
-      endTime = new Date(year, month - 1, day, hour + 1, 0, 0);
-    }
+    // JST時間範囲を指定（JSTのままDateオブジェクトを作成）
+    const startTime = new Date(year, month - 1, day, hour, 0, 0);
+    const endTime = new Date(year, month - 1, day, hour + 1, 0, 0);
     
     const startTimeISO = startTime.toISOString();
     const endTimeISO = endTime.toISOString();
     
-    console.log(`Query time range (UTC): ${startTimeISO} to ${endTimeISO}`);
-    console.log(`Query time range (JST): ${this.convertUTCtoJST(startTime).toISOString()} to ${this.convertUTCtoJST(endTime).toISOString()}`);
+    console.log(`Query time range (JST): ${startTime.toString()} to ${endTime.toString()}`);
+    console.log(`ISO representation: ${startTimeISO} to ${endTimeISO}`);
   
-    // インデックスを使用してローソク足を計算
+    // ローソク足を計算
     return this.calculateCandleFromIndex(code, startTime, endTime);
   }
   
   // インデックスからローソク足データを計算
   private calculateCandleFromIndex(code: string, startTime: Date, endTime: Date): CandleData {
-    console.log(`Calculating candle from indexed data for code: ${code}, time range: ${startTime.toISOString()} to ${endTime.toISOString()}`);
-    
-    // デバッグ: 利用可能なコードを表示
-    console.log(`Available codes: ${Array.from(this.stats.uniqueCodes).join(', ')}`);
+    console.log(`Calculating candle from indexed data for code: ${code}, time range: ${startTime.toString()} to ${endTime.toString()}`);
     
     // コードが存在しない場合
     if (!this.dataIndex[code]) {
@@ -265,35 +208,9 @@ export class CandleService implements OnModuleInit {
     const timeKey = this.getTimeKey(startTime);
     console.log(`Looking for timeKey: ${timeKey}`);
     
-    // デバッグ: このコードで利用可能な時間キーを表示
-    const availableTimeKeys = Object.keys(this.dataIndex[code]);
-    console.log(`Available timeKeys for code ${code}: ${availableTimeKeys.join(', ')}`);
-    
-    // 指定された時間のデータが存在しない場合
+    // 指定された時間のデータが存在しない場合（完全一致のみ）
     if (!this.dataIndex[code][timeKey]) {
       console.log(`No data found for code: ${code} at time: ${timeKey}`);
-      
-      // デバッグ: 最も近い時間キーを探す
-      const closestTimeKey = this.findClosestTimeKey(code, timeKey);
-      if (closestTimeKey) {
-        console.log(`Closest available timeKey: ${closestTimeKey}`);
-        console.log(`Using closest timeKey as fallback`);
-        
-        // 最も近い時間キーのデータを使用
-        const fallbackData = this.dataIndex[code][closestTimeKey];
-        if (fallbackData && fallbackData.prices.length > 0) {
-          const result = {
-            open: fallbackData.prices[0],
-            close: fallbackData.prices[fallbackData.prices.length - 1],
-            high: Math.max(...fallbackData.prices),
-            low: Math.min(...fallbackData.prices)
-          };
-          
-          console.log('Calculated candle data from fallback timeKey:', result);
-          return result;
-        }
-      }
-      
       return { open: 0, high: 0, low: 0, close: 0 };
     }
     
@@ -306,8 +223,8 @@ export class CandleService implements OnModuleInit {
     
     // デバッグ: 最初と最後の時間を表示
     if (hourData.times.length > 0) {
-      console.log(`First time in hour data: ${hourData.times[0].toISOString()}`);
-      console.log(`Last time in hour data: ${hourData.times[hourData.times.length - 1].toISOString()}`);
+      console.log(`First time in hour data: ${hourData.times[0].toString()}`);
+      console.log(`Last time in hour data: ${hourData.times[hourData.times.length - 1].toString()}`);
     }
     
     for (let i = 0; i < hourData.times.length; i++) {
@@ -320,24 +237,9 @@ export class CandleService implements OnModuleInit {
     
     console.log(`Filtered ${filteredPrices.length} records from indexed data`);
     
+    // 指定された時間範囲内にデータがない場合は0を返す（完全一致のみ）
     if (filteredPrices.length === 0) {
       console.log('No matching data found in the specified time range');
-      
-      // フィルタリングの結果が0の場合、時間範囲を無視して時間キー全体のデータを使用
-      if (hourData.prices.length > 0) {
-        console.log(`Using all data for this hour as fallback (${hourData.prices.length} records)`);
-        
-        const result = {
-          open: hourData.prices[0],
-          close: hourData.prices[hourData.prices.length - 1],
-          high: Math.max(...hourData.prices),
-          low: Math.min(...hourData.prices)
-        };
-        
-        console.log('Calculated candle data from all hour data:', result);
-        return result;
-      }
-      
       return { open: 0, high: 0, low: 0, close: 0 };
     }
     
@@ -352,24 +254,5 @@ export class CandleService implements OnModuleInit {
     console.log('Calculated candle data from indexed data:', result);
     
     return result;
-  }
-  
-  // 最も近い時間キーを探す補助関数
-  private findClosestTimeKey(code: string, targetTimeKey: string): string | null {
-    if (!this.dataIndex[code]) return null;
-    
-    const availableKeys = Object.keys(this.dataIndex[code]);
-    if (availableKeys.length === 0) return null;
-    
-    // 単純な文字列比較で最も近いキーを見つける
-    return availableKeys.reduce((closest: string | null, current: string) => {
-      if (!closest) return current;
-      
-      // targetTimeKeyとの差を計算
-      const currentDiff = Math.abs(current.localeCompare(targetTimeKey));
-      const closestDiff = Math.abs(closest.localeCompare(targetTimeKey));
-      
-      return currentDiff < closestDiff ? current : closest;
-    }, null);
   }
 }
