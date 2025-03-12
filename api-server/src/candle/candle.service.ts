@@ -66,6 +66,7 @@ export class CandleService implements OnModuleInit {
         }
         
         let rowCount = 0;
+        let sampleRows: any[] = [];
         
         fs.createReadStream(csvFilePath)
           .pipe(csv.parse({ headers: true }))
@@ -77,14 +78,71 @@ export class CandleService implements OnModuleInit {
             try {
               rowCount++;
               
+              // サンプルデータを保存（最初の5行）
+              if (rowCount <= 5) {
+                sampleRows.push(row);
+              }
+              
               // 進捗ログ（1万行ごとに表示）
               if (rowCount % 10000 === 0) {
                 console.log(`Processed ${rowCount} rows...`);
               }
               
-              const time = new Date(row.time);
+              // 日時の解析を修正
+              // 例: "2021-12-22 09:00:00 +0900 JST" -> "2021-12-22T09:00:00+09:00"
+              const timeStr = row.time;
+              let time: Date;
+              
+              try {
+                // JSTフォーマットの解析
+                if (timeStr.includes('JST')) {
+                  // "+0900 JST" 部分を "+09:00" に変換
+                  const isoTimeStr = timeStr
+                    .replace(/(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2}:\d{2})\s\+0900\sJST/, '$1T$2+09:00');
+                  time = new Date(isoTimeStr);
+                  
+                  // 解析に失敗した場合（Invalid Date）、別の方法を試す
+                  if (isNaN(time.getTime())) {
+                    // 日時部分だけを抽出して、JSTとして解析し、UTCに変換
+                    const dateParts = timeStr.match(/(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
+                    if (dateParts) {
+                      // JSTとして解析
+                      const jstTime = new Date(
+                        parseInt(dateParts[1]), // 年
+                        parseInt(dateParts[2]) - 1, // 月（0-11）
+                        parseInt(dateParts[3]), // 日
+                        parseInt(dateParts[4]), // 時
+                        parseInt(dateParts[5]), // 分
+                        parseInt(dateParts[6])  // 秒
+                      );
+                      // JSTからUTCに変換（9時間引く）
+                      time = new Date(jstTime.getTime() - 9 * 60 * 60 * 1000);
+                    } else {
+                      throw new Error(`Failed to parse date: ${timeStr}`);
+                    }
+                  }
+                } else {
+                  // 標準的なフォーマットの場合
+                  time = new Date(timeStr);
+                }
+                
+                // 解析に失敗した場合
+                if (isNaN(time.getTime())) {
+                  throw new Error(`Invalid date: ${timeStr}`);
+                }
+              } catch (dateError) {
+                console.error(`Error parsing date "${timeStr}":`, dateError);
+                // エラーが発生した場合はスキップ
+                return;
+              }
+              
               const code = row.code;
               const price = parseFloat(row.price);
+              
+              // デバッグ: 最初の数行のデータを詳細に表示
+              if (rowCount <= 5) {
+                console.log(`Row ${rowCount}: original time="${timeStr}", parsed time=${time.toISOString()}, code=${code}, price=${price}`);
+              }
               
               // 統計情報の更新
               this.stats.uniqueCodes.add(code);
@@ -116,8 +174,20 @@ export class CandleService implements OnModuleInit {
           .on('end', () => {
             this.stats.totalRows = rowCount;
             console.log(`Successfully indexed ${rowCount} tick data records from CSV`);
-            console.log(`Unique codes: ${this.stats.uniqueCodes.size}`);
+            console.log(`Unique codes: ${Array.from(this.stats.uniqueCodes).join(', ')}`);
             console.log(`Time range: ${this.stats.minTime.toISOString()} to ${this.stats.maxTime.toISOString()}`);
+            
+            // サンプルデータの表示
+            console.log('Sample rows from CSV:');
+            sampleRows.forEach((row, index) => {
+              console.log(`Sample ${index + 1}:`, row);
+            });
+            
+            // 各コードの時間キー数を表示
+            for (const code of this.stats.uniqueCodes) {
+              const timeKeys = Object.keys(this.dataIndex[code] || {});
+              console.log(`Code ${code} has ${timeKeys.length} time keys. Sample keys: ${timeKeys.slice(0, 3).join(', ')}`);
+            }
             
             // メモリ使用量の概算を表示
             const memoryUsage = process.memoryUsage();
@@ -182,6 +252,9 @@ export class CandleService implements OnModuleInit {
   private calculateCandleFromIndex(code: string, startTime: Date, endTime: Date): CandleData {
     console.log(`Calculating candle from indexed data for code: ${code}, time range: ${startTime.toISOString()} to ${endTime.toISOString()}`);
     
+    // デバッグ: 利用可能なコードを表示
+    console.log(`Available codes: ${Array.from(this.stats.uniqueCodes).join(', ')}`);
+    
     // コードが存在しない場合
     if (!this.dataIndex[code]) {
       console.log(`No data found for code: ${code}`);
@@ -190,18 +263,52 @@ export class CandleService implements OnModuleInit {
     
     // 時間キーを取得
     const timeKey = this.getTimeKey(startTime);
+    console.log(`Looking for timeKey: ${timeKey}`);
+    
+    // デバッグ: このコードで利用可能な時間キーを表示
+    const availableTimeKeys = Object.keys(this.dataIndex[code]);
+    console.log(`Available timeKeys for code ${code}: ${availableTimeKeys.join(', ')}`);
     
     // 指定された時間のデータが存在しない場合
     if (!this.dataIndex[code][timeKey]) {
       console.log(`No data found for code: ${code} at time: ${timeKey}`);
+      
+      // デバッグ: 最も近い時間キーを探す
+      const closestTimeKey = this.findClosestTimeKey(code, timeKey);
+      if (closestTimeKey) {
+        console.log(`Closest available timeKey: ${closestTimeKey}`);
+        console.log(`Using closest timeKey as fallback`);
+        
+        // 最も近い時間キーのデータを使用
+        const fallbackData = this.dataIndex[code][closestTimeKey];
+        if (fallbackData && fallbackData.prices.length > 0) {
+          const result = {
+            open: fallbackData.prices[0],
+            close: fallbackData.prices[fallbackData.prices.length - 1],
+            high: Math.max(...fallbackData.prices),
+            low: Math.min(...fallbackData.prices)
+          };
+          
+          console.log('Calculated candle data from fallback timeKey:', result);
+          return result;
+        }
+      }
+      
       return { open: 0, high: 0, low: 0, close: 0 };
     }
     
     const hourData = this.dataIndex[code][timeKey];
+    console.log(`Found ${hourData.times.length} records for this hour`);
     
     // 時間範囲内のデータをフィルタリング
     const filteredPrices: number[] = [];
     const filteredTimes: Date[] = [];
+    
+    // デバッグ: 最初と最後の時間を表示
+    if (hourData.times.length > 0) {
+      console.log(`First time in hour data: ${hourData.times[0].toISOString()}`);
+      console.log(`Last time in hour data: ${hourData.times[hourData.times.length - 1].toISOString()}`);
+    }
     
     for (let i = 0; i < hourData.times.length; i++) {
       const time = hourData.times[i];
@@ -215,6 +322,22 @@ export class CandleService implements OnModuleInit {
     
     if (filteredPrices.length === 0) {
       console.log('No matching data found in the specified time range');
+      
+      // フィルタリングの結果が0の場合、時間範囲を無視して時間キー全体のデータを使用
+      if (hourData.prices.length > 0) {
+        console.log(`Using all data for this hour as fallback (${hourData.prices.length} records)`);
+        
+        const result = {
+          open: hourData.prices[0],
+          close: hourData.prices[hourData.prices.length - 1],
+          high: Math.max(...hourData.prices),
+          low: Math.min(...hourData.prices)
+        };
+        
+        console.log('Calculated candle data from all hour data:', result);
+        return result;
+      }
+      
       return { open: 0, high: 0, low: 0, close: 0 };
     }
     
@@ -229,5 +352,24 @@ export class CandleService implements OnModuleInit {
     console.log('Calculated candle data from indexed data:', result);
     
     return result;
+  }
+  
+  // 最も近い時間キーを探す補助関数
+  private findClosestTimeKey(code: string, targetTimeKey: string): string | null {
+    if (!this.dataIndex[code]) return null;
+    
+    const availableKeys = Object.keys(this.dataIndex[code]);
+    if (availableKeys.length === 0) return null;
+    
+    // 単純な文字列比較で最も近いキーを見つける
+    return availableKeys.reduce((closest: string | null, current: string) => {
+      if (!closest) return current;
+      
+      // targetTimeKeyとの差を計算
+      const currentDiff = Math.abs(current.localeCompare(targetTimeKey));
+      const closestDiff = Math.abs(closest.localeCompare(targetTimeKey));
+      
+      return currentDiff < closestDiff ? current : closest;
+    }, null);
   }
 }
