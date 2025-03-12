@@ -38,6 +38,8 @@ export class CandleService implements OnModuleInit {
     minTime: new Date(),
     maxTime: new Date(0)
   };
+  // データ読み込み完了フラグ
+  private dataLoaded = false;
 
   constructor() {
     console.log('Initializing CandleService - CSV only mode with optimized memory usage');
@@ -46,6 +48,8 @@ export class CandleService implements OnModuleInit {
   async onModuleInit() {
     console.log('Initializing CandleService and loading data from CSV...');
     await this.loadDataFromCSV();
+    this.dataLoaded = true;
+    console.log('Data loading completed. Service is ready to handle requests.');
   }
   
   // CSVファイルからデータを読み込み、インデックス化する
@@ -254,5 +258,19 @@ export class CandleService implements OnModuleInit {
     console.log('Calculated candle data from indexed data:', result);
     
     return result;
+  }
+
+  // データ読み込み完了を待機するメソッド
+  async waitForDataLoading(): Promise<void> {
+    if (this.dataLoaded) return;
+    
+    return new Promise<void>(resolve => {
+      const checkInterval = setInterval(() => {
+        if (this.dataLoaded) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+    });
   }
 }
