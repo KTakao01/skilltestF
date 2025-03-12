@@ -1,6 +1,13 @@
 import { Controller, Get, Query, Put, Body, HttpCode } from '@nestjs/common';
 import { CandleService } from './candle.service';
 
+interface CandleData {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 @Controller()
 export class CandleController {
   constructor(private readonly candleService: CandleService) {}
@@ -12,7 +19,7 @@ export class CandleController {
     @Query('month') month: number,
     @Query('day') day: number,
     @Query('hour') hour: number,
-  ) {
+  ): Promise<CandleData> {
     return this.candleService.calculateCandle(code, year, month, day, hour);
   }
 
