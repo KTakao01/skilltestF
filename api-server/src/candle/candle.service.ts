@@ -23,8 +23,8 @@ export class CandleService implements OnModuleInit {
   constructor() {
     // Supabaseクライアントの初期化
     this.supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_KEY || ''
+       process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
     );
   }
 
