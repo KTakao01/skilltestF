@@ -4,6 +4,6 @@ import { CandleService } from './candle.service';
 
 @Module({
   controllers: [CandleController],
-  providers: [CandleService]
+  providers: [CandleService],
 })
 export class CandleModule {}

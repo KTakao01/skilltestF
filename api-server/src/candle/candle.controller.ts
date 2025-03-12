@@ -20,7 +20,21 @@ export class CandleController {
     @Query('day') day: number,
     @Query('hour') hour: number,
   ): Promise<CandleData> {
-    return this.candleService.calculateCandle(code, year, month, day, hour);
+    console.log('=== Candle API Request ===');
+    console.log(`Received parameters: code=${code}, year=${year}, month=${month}, day=${day}, hour=${hour}`);
+    console.log(`Parameter types: year=${typeof year}, month=${typeof month}, day=${typeof day}, hour=${typeof hour}`);
+    
+    // 数値型に変換（クエリパラメータは文字列として受け取られる可能性があるため）
+    const numYear = Number(year);
+    const numMonth = Number(month);
+    const numDay = Number(day);
+    const numHour = Number(hour);
+    
+    console.log(`Converted parameters: year=${numYear}, month=${numMonth}, day=${numDay}, hour=${numHour}`);
+    
+    const result = await this.candleService.calculateCandle(code, numYear, numMonth, numDay, numHour);
+    console.log('API response:', result);
+    return result;
   }
 
   @Put('flag')
