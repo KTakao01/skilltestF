@@ -67,7 +67,7 @@ function verifyCertificate(certPath) {
       const result = caCert.verify(cert);
       if (result) {
         console.log(`検証結果: 成功 - この証明書は指定されたCAによって署名されています`);
-        console.log(`FLAG: ${path.basename(certPath).replace(/f1nat3xthd\{|\}\.pem/g, '')}`);
+        console.log(`FLAG: ${path.basename(certPath)}`);
         return true;
       } else {
         console.log('検証結果: 失敗 - 署名が一致しません');
@@ -109,19 +109,8 @@ async function findCertificatesIssuedByCA() {
           foundMatch = true;
           console.log(`\n=== 一致する証明書を見つけました！ ===`);
           console.log(`ファイル名: ${file}`);
-          const flag = file.replace(/f1nat3xthd\{|\}\.pem/g, '');
-          console.log(`FLAG: ${flag}`);
           console.log('=======================================\n');
-          
-          // 結果を大きく表示
-          console.log('\n');
-          console.log('##################################################');
-          console.log(`#                                                #`);
-          console.log(`#  発見したFLAG: ${flag}  #`);
-          console.log(`#                                                #`);
-          console.log('##################################################');
-          console.log('\n');
-          
+
           // ループを終了
           break;
         }
